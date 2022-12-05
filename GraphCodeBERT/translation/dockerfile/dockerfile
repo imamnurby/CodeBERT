@@ -1,0 +1,8 @@
+FROM pytorch/pytorch:1.13.0-cuda11.6-cudnn8-runtime
+RUN apt-get update && apt-get install -y\
+	tmux\
+	python3.8\
+	python3-pip\
+	git&&\
+pip3 install --no-cache-dir --use-feature=2020-resolver datasets transformers pandas tree-sitter==0.2.2 tqdm jupyterlab tqdm&&\
+apt-get clean
