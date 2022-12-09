@@ -25,7 +25,8 @@ Brief summary: the input of GCodeBERT is an instance of `InputFeatures` object w
 ## Workflow of `run.py`
 The workflow of `run.py` is shown in the figure below.
 
-![Training workflow inside run.py](img/run_py_training_workflow.png)
+![Training workflow inside run.py](https://user-images.githubusercontent.com/43092949/206739332-e2919c2f-fb68-4489-bcb6-005977193d1d.png)
+
 
 ### Data Loading
 - Input: two files, one contains the source translation and the other contains the target translation
