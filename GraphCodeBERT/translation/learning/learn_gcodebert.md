@@ -287,7 +287,7 @@ The workflow of `run.py` is shown in the figure below.
                     - `node_token` index 3 can attend to 4 `code_tokens`, i.e,. ['Ġbefore', 'Client', 'Exec', 'ution'] and vice versa
     - The model feeds `source_ids` to the embedding layer, resulting in `temporary_embedding`
     - `temporary_embedding` + `attention_mask` + `position_idx` --> matrix manipulation -->  `node_token_embedding` and `code_token_embedding`
-    - `node_embedding` and `code_embedding` is summed, resulting in `combined_embedding`
+    - `node_token_embedding` and `code_token_embedding` is summed, resulting in `combined_embedding`
     - `combined_embedding`, `attention_mask`, and `position_idx` is passed to the encoder to produce the final vector representation
 
 
