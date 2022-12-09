@@ -7,31 +7,42 @@
     - `bleu.py`: metric calculation
     - `parser`: a folder that contains script and code to extract dataflow from codes
 
-## Input of GCodeBERT
-### Thought process
-1. Inspect `run.py`
-2. Localize the lines of code that correspond to loading the raw data and preprocess the data
-3. Study these lines of code
+# Contents
+1. [Input of GCodeBERT](#input-of-gcodebert): explain how the input of the model is represented
+2. [Computing Vector Representations in GCodeBERT](#computing-vector-representations-in-gcodebert): explain how the input of the model is used to obtain a vector representation of an input code
 
-### Workflow of `run.py`
+# Input of GCodeBERT
+Brief summary: the input of GCodeBERT is an instance of `InputFeatures` object where it holds 8 information:
+1. `example_id`: the object id
+2. `source_ids`: a list of code tokens and node tokens (in dataflow) from the source (input translation)
+3. `position_idx`: a list of integer to indicate the relative position of each id in `source_ids`
+4. `dfg_to_code`: a list that indicates the mapping between node tokens to code tokens
+5. `dfg_to_dfg`: a list that indicates the dependency relation between node tokens
+6. `target_ids`: a list of code tokens from the target translation
+7. `source_mask`: a list to integer to differentiate the code, node, and padding tokens
+8. `target_mask`: the same as source_mask
+
+## Workflow of `run.py`
 The workflow of `run.py` is shown in the figure below.
 
 ![Training workflow inside run.py](img/run_py_training_workflow.png)
 
-To know the how the input of GCodeBERT is represented, I scrutinize `Data Loading` and `Data Processing` further.
-
 ### Data Loading
+- Input: two files, one contains the source translation and the other contains the target translation
+- Output: a list of `Example` objects
 - The data loading is performed by invoking [`read_examples`](https://github.com/microsoft/CodeBERT/blob/305bab27920d57ba37964ab05ee7b1acdbb24416/GraphCodeBERT/translation/run.py#L124) function.
 - What is `read_examples` doing?
     1. Open two files, one contains the source translation and the other contains the target translation
-        - The example of one line in the source translation file
-            ```
-            public String toString() {return getClass().getName() + " [" +_value +"]";}
-            ```
-        - The example of one line in the target translation file
-            ```
-            public override String ToString(){StringBuilder sb = new StringBuilder(64);sb.Append(GetType().Name).Append(" [");sb.Append(value);sb.Append("]");return sb.ToString();}
-            ```
+        Example:
+        ```
+        Source file
+        public String toString() {return getClass().getName() + " [" +_value +"]";}
+        ...
+
+        Target file
+        public override String ToString(){StringBuilder sb = new StringBuilder(64);sb.Append(GetType().Name).Append(" [");sb.Append(value);sb.Append("]");return sb.ToString();}
+        ...
+        ```
     2. Iterate through each line of both files
     3. Create an [`Example`](https://github.com/microsoft/CodeBERT/blob/305bab27920d57ba37964ab05ee7b1acdbb24416/GraphCodeBERT/translation/run.py#L113) object by instantiating its attributes, i.e., `source` with the source translation, `target` with the target translation, and `lang` with the source language
         ```
@@ -47,16 +58,18 @@ To know the how the input of GCodeBERT is represented, I scrutinize `Data Loadin
                 self.lang=lang          # source language
         ```
     4. Append to a list
-- The output of this step is a list of `Example` object
 
 ### Data Processing
-- The data processing is performed by feeding a list of `Example` objects from the the data loading step to [`convert_examples_to_features`](https://github.com/microsoft/CodeBERT/blob/305bab27920d57ba37964ab05ee7b1acdbb24416/GraphCodeBERT/translation/run.py#L178) function
-- This step consists of two substeps:
+- Input: a list of `Example` objects
+- Output: a list of `InputFeatures` objects
+- A list of `Example` objects is fed to [`convert_examples_to_features`](https://github.com/microsoft/CodeBERT/blob/305bab27920d57ba37964ab05ee7b1acdbb24416/GraphCodeBERT/translation/run.py#L178) function
+- This step consists of two main processes:
     1. Dataflow extraction
     2. Post-processing
+
 #### Dataflow Extraction
 - The extraction begins by invoking [`extract_dataflow`](https://github.com/microsoft/CodeBERT/blob/305bab27920d57ba37964ab05ee7b1acdbb24416/GraphCodeBERT/translation/run.py#L74) function.
-- `extract_dataflow` will call another function to extract the dataflow, depending on the language of the input. Currently, there are 7 functions:
+- `extract_dataflow` calls another function to extract the dataflow, depending on the language of the input:
     1. Python: [`DFG_python`](https://github.com/microsoft/CodeBERT/blob/305bab27920d57ba37964ab05ee7b1acdbb24416/GraphCodeBERT/translation/parser/DFG.py#L11)
     2. Java: [`DFG_java`](https://github.com/microsoft/CodeBERT/blob/305bab27920d57ba37964ab05ee7b1acdbb24416/GraphCodeBERT/translation/parser/DFG.py#L180)
     3. Ruby: [`DFG_ruby`](https://github.com/microsoft/CodeBERT/blob/305bab27920d57ba37964ab05ee7b1acdbb24416/GraphCodeBERT/translation/parser/DFG.py#L539)
@@ -64,9 +77,9 @@ To know the how the input of GCodeBERT is represented, I scrutinize `Data Loadin
     5. Go [`DFG_go`](https://github.com/microsoft/CodeBERT/blob/305bab27920d57ba37964ab05ee7b1acdbb24416/GraphCodeBERT/translation/parser/DFG.py#L698)
     6. Javascript: [`DFG_javascript`](https://github.com/microsoft/CodeBERT/blob/305bab27920d57ba37964ab05ee7b1acdbb24416/GraphCodeBERT/translation/parser/DFG.py#L1029)
     7. C#: [`DFG_csharp`](https://github.com/microsoft/CodeBERT/blob/305bab27920d57ba37964ab05ee7b1acdbb24416/GraphCodeBERT/translation/parser/DFG.py#L356)
-- The idea to extract the dataflow is: 
-    1. Obtain the AST of the code using `tree_sitter`
-    2. Apply processing steps on the AST
+- The dataflow is extracted as follows: 
+    1. Obtain the code AST using tree_sitter
+    2. Extract the dataflow from the AST
 - Example of an input-output pairs from this step:
     - Input: 
         ```
@@ -76,82 +89,12 @@ To know the how the input of GCodeBERT is represented, I scrutinize `Data Loadin
         }
         ```
     - Output:
-        - `code_token_list`
+        - <a id="code_token_list"></a> `code_token_list`
             ```
             ['public', 'ListSpeechSynthesisTasksResult', 'listSpeechSynthesisTasks', '', '(', 'ListSpeechSynthesisTasksRequest', 'request', ')', '{', 'request', '=', 'beforeClientExecution', '(', 'request', ')', ';', 'return', 'executeListSpeechSynthesisTasks', '(', 'request', ')', ';', '}']
             ```
-        - `dataflow`
-            - The dataflow is represented using a tuple that contains 5 elements:
-                1. `current_identitifer`
-                2. Index of `current_identifier` in `code_token_list`
-                3. `comes_from` or `computed_from`
-                4. `source_identifier`
-                5. Index of `source_identifier` in `code_token_list`
-            - Example:
-                ```
-                [('request', 6, 'comesFrom', [], []), 
-                ('request', 9, 'computedFrom', ['beforeClientExecution'], [11]), 
-                ('request', 9, 'computedFrom', ['request'], [13]), 
-                ('beforeClientExecution', 11, 'comesFrom', [], []), 
-                ('request', 13, 'comesFrom', ['request'], [6]), 
-                ('request', 19, 'comesFrom', ['request'], [9])]
-                ```
-#### Post-processing
-- The outputs and processing steps to obtain each output are presented below:
-    1. `source_ids`
-        - Each element in `code_token_list` is tokenized using GraphCodeBERT tokenizer, then append a special token `<s>` in the beginning and `</sep>` in the end
+        - <a id="dataflow"></a> `nodes_dependency_mapping`
             ```
-            ['<s>', 'public', 'ĠList', 'Spe', 'ech', 'Sy', 'nt', 'hesis', 'T', 'asks', 'Result', 'Ġlist', 'Spe', 'ech', 'Sy', 'nt', 'hesis', 'T', 'asks', 'Ġ', 'Ġ(', 'ĠList', 'Spe', 'ech', 'Sy', 'nt', 'hesis', 'T', 'asks', 'Request', 'Ġrequest', 'Ġ)', 'Ġ{', 'Ġrequest', 'Ġ=', 'Ġbefore', 'Client', 'Exec', 'ution', 'Ġ(', 'Ġrequest', 'Ġ)', 'Ġ;', 'Ġreturn', 'Ġexecute', 'List', 'Spe', 'ech', 'Sy', 'nt', 'hesis', 'T', 'asks', 'Ġ(', 'Ġrequest', 'Ġ)', 'Ġ;', 'Ġ}', '</s>']
-
-            length = 59
-            ```
-        - Each token is converted to its token id
-            ```
-            [0, 15110, 9527, 29235, 7529, 35615, 3999, 35571, 565, 40981, 48136, 889, 29235, 7529, 35615, 3999, 35571, 565, 40981, 1437, 36, 9527, 29235, 7529, 35615, 3999, 35571, 565, 40981, 45589, 2069, 4839, 25522, 2069, 5457, 137, 47952, 46891, 15175, 36, 2069, 4839, 25606, 671, 11189, 36583, 29235, 7529, 35615, 3999, 35571, 565, 40981, 36, 2069, 4839, 25606, 35524, 2]
-
-            length = 59
-            ```
-        - Append a special token ids (i.e., `3` in this case) to represent dfg. The number of the special tokens should matches with the number of element in `dataflow`.
-            ```
-            [0, 15110, 9527, 29235, 7529, 35615, 3999, 35571, 565, 40981, 48136, 889, 29235, 7529, 35615, 3999, 35571, 565, 40981, 1437, 36, 9527, 29235, 7529, 35615, 3999, 35571, 565, 40981, 45589, 2069, 4839, 25522, 2069, 5457, 137, 47952, 46891, 15175, 36, 2069, 4839, 25606, 671, 11189, 36583, 29235, 7529, 35615, 3999, 35571, 565, 40981, 36, 2069, 4839, 25606, 35524, 2, 3, 3, 3, 3, 3, 3]
-
-            length = 65
-            ```
-        - Insert padding token until it reaches the (specified) maximum length. The goal this step is to make sure that all `source_ids` have the same lenght, so the model can process it in batch
-            ```
-            [0, 15110, 9527, 29235, 7529, 35615, 3999, 35571, 565, 40981, 48136, 889, 29235, 7529, 35615, 3999, 35571, 565, 40981, 1437, 36, 9527, 29235, 7529, 35615, 3999, 35571, 565, 40981, 45589, 2069, 4839, 25522, 2069, 5457, 137, 47952, 46891, 15175, 36, 2069, 4839, 25606, 671, 11189, 36583, 29235, 7529, 35615, 3999, 35571, 565, 40981, 36, 2069, 4839, 25606, 35524, 2, 3, 3, 3, 3, 3, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
-
-            length = 200
-            ```
-    2. `source_mask`
-        - `source_mask` is used to differentiate between the input and padding token when computing the attention; the attention on the padding will be ignored by multiplying the value with 0
-            ```
-            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-
-            length = 200
-            ```
-    3.  `position_idx`
-        - `position_idx` is used to indicate the relative ordering position in the sequence. 0 is used to represent the dfg, while 1 is used to indicate the padding.
-            ```
-            [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
-
-            length = 200
-            ```
-    4. `dfg_to_code`
-        - `dfg_to_code` is a list that contains tuple of two integers that represent the start and end indexes of the subword of a code token in the `code_token_list` after the tokenization step.
-            ```
-            code:
-            public ListSpeechSynthesisTasksResult listSpeechSynthesisTasks(ListSpeechSynthesisTasksRequest request) {
-                request = beforeClientExecution(request);
-                return executeListSpeechSynthesisTask (request);
-            }
-            ```
-            ```
-            tokenized code_token_list:
-            ['<s>', 'public', 'ĠList', 'Spe', 'ech', 'Sy', 'nt', 'hesis', 'T', 'asks', 'Result', 'Ġlist', 'Spe', 'ech', 'Sy', 'nt', 'hesis', 'T', 'asks', 'Ġ', 'Ġ(', 'ĠList', 'Spe', 'ech', 'Sy', 'nt', 'hesis', 'T', 'asks', 'Request', 'Ġrequest', 'Ġ)', 'Ġ{', 'Ġrequest', 'Ġ=', 'Ġbefore', 'Client', 'Exec', 'ution', 'Ġ(', 'Ġrequest', 'Ġ)', 'Ġ;', 'Ġreturn', 'Ġexecute', 'List', 'Spe', 'ech', 'Sy', 'nt', 'hesis', 'T', 'asks', 'Ġ(', 'Ġrequest', 'Ġ)', 'Ġ;', 'Ġ}', '</s>']
-            ```
-            ```
-            dataflow:
             [('request', 6, 'comesFrom', [], []), 
             ('request', 9, 'computedFrom', ['beforeClientExecution'], [11]), 
             ('request', 9, 'computedFrom', ['request'], [13]), 
@@ -159,32 +102,124 @@ To know the how the input of GCodeBERT is represented, I scrutinize `Data Loadin
             ('request', 13, 'comesFrom', ['request'], [6]), 
             ('request', 19, 'comesFrom', ['request'], [9])]
             ```
+            Each tuple in the list contains 5 elements:
+            1. `current_node`, where a node corresponds to an identifier in the AST 
+            2. `current_node_index` in `code_token_list`
+            3. `relationship`, the value is either `comes_from` or `computed_from`
+            4. `source_node`
+            5. `source_node_index` in `code_token_list`
+            
+#### Post-processing
+- Inputs: `code_token_list` and `nodes_dependency_mapping`
+- Outputs:
+    1. <a id="source_ids"></a> `source_ids`
+        - Each `code_token` in `code_token_list` is tokenized using GraphCodeBERT tokenizer, then a special tokens are appended, i.e., `<s>` in the beginning and `</sep>` in the end
             ```
-            dfg_to_code:
-            [(30, 31), (33, 34), (33, 34), (35, 39), (40, 41), (54, 55)]
+            ['<s>', 'public', 'ĠList', 'Spe', 'ech', 'Sy', 'nt', 'hesis', 'T', 'asks', 'Result', 'Ġlist', 'Spe', 'ech', 'Sy', 'nt', 'hesis', 'T', 'asks', 'Ġ', 'Ġ(', 'ĠList', 'Spe', 'ech', 'Sy', 'nt', 'hesis', 'T', 'asks', 'Request', 'Ġrequest', 'Ġ)', 'Ġ{', 'Ġrequest', 'Ġ=', 'Ġbefore', 'Client', 'Exec', 'ution', 'Ġ(', 'Ġrequest', 'Ġ)', 'Ġ;', 'Ġreturn', 'Ġexecute', 'List', 'Spe', 'ech', 'Sy', 'nt', 'hesis', 'T', 'asks', 'Ġ(', 'Ġrequest', 'Ġ)', 'Ġ;', 'Ġ}', '</s>']
+
+            length = 59
             ```
+        - Each `code_token` is converted to its token id
+            ```
+            [0, 15110, 9527, 29235, 7529, 35615, 3999, 35571, 565, 40981, 48136, 889, 29235, 7529, 35615, 3999, 35571, 565, 40981, 1437, 36, 9527, 29235, 7529, 35615, 3999, 35571, 565, 40981, 45589, 2069, 4839, 25522, 2069, 5457, 137, 47952, 46891, 15175, 36, 2069, 4839, 25606, 671, 11189, 36583, 29235, 7529, 35615, 3999, 35571, 565, 40981, 36, 2069, 4839, 25606, 35524, 2]
+
+            length = 59
+            ```
+        - Append a special token id (i.e., `3` in this case) to indicate `node_token` that corresponds to `source_node` in `nodes_dependency_mapping`. The number of added tokens is the same as the number length of `nodes_dependency_mapping`.
+            ```
+            [0, 15110, 9527, 29235, 7529, 35615, 3999, 35571, 565, 40981, 48136, 889, 29235, 7529, 35615, 3999, 35571, 565, 40981, 1437, 36, 9527, 29235, 7529, 35615, 3999, 35571, 565, 40981, 45589, 2069, 4839, 25522, 2069, 5457, 137, 47952, 46891, 15175, 36, 2069, 4839, 25606, 671, 11189, 36583, 29235, 7529, 35615, 3999, 35571, 565, 40981, 36, 2069, 4839, 25606, 35524, 2, 3, 3, 3, 3, 3, 3]
+
+            length = 65
+            ```
+        - Insert `padding_token` until it reaches the maximum length. `padding_token` is used to make sure that all `source_ids` have the same lenght, so the model can process the input in batch.
+            ```
+            [0, 15110, 9527, 29235, 7529, 35615, 3999, 35571, 565, 40981, 48136, 889, 29235, 7529, 35615, 3999, 35571, 565, 40981, 1437, 36, 9527, 29235, 7529, 35615, 3999, 35571, 565, 40981, 45589, 2069, 4839, 25522, 2069, 5457, 137, 47952, 46891, 15175, 36, 2069, 4839, 25606, 671, 11189, 36583, 29235, 7529, 35615, 3999, 35571, 565, 40981, 36, 2069, 4839, 25606, 35524, 2, 3, 3, 3, 3, 3, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+
+            length = 200
+            ```
+        - In the end, `source_ids` contains three type of tokens:
+            - `code_token` to represent the token in the input code
+            - `node_token` to indicate a node in the dataflow graph
+            - `padding_token`
+    
+    2. `dfg_to_code`
+        ```
+        code:
+        public ListSpeechSynthesisTasksResult listSpeechSynthesisTasks(ListSpeechSynthesisTasksRequest request) {
+            request = beforeClientExecution(request);
+            return executeListSpeechSynthesisTask (request);
+        }
+
+        tokenized_code_token_list:
+        ['<s>', 'public', 'ĠList', 'Spe', 'ech', 'Sy', 'nt', 'hesis', 'T', 'asks', 'Result', 'Ġlist', 'Spe', 'ech', 'Sy', 'nt', 'hesis', 'T', 'asks', 'Ġ', 'Ġ(', 'ĠList', 'Spe', 'ech', 'Sy', 'nt', 'hesis', 'T', 'asks', 'Request', 'Ġrequest', 'Ġ)', 'Ġ{', 'Ġrequest', 'Ġ=', 'Ġbefore', 'Client', 'Exec', 'ution', 'Ġ(', 'Ġrequest', 'Ġ)', 'Ġ;', 'Ġreturn', 'Ġexecute', 'List', 'Spe', 'ech', 'Sy', 'nt', 'hesis', 'T', 'asks', 'Ġ(', 'Ġrequest', 'Ġ)', 'Ġ;', 'Ġ}', '</s>']
+
+        dfg_to_code:
+        [(30, 31), (33, 34), (33, 34), (35, 39), (40, 41), (54, 55)]
+        
+        source_ids (the same as the example in number 1):
+        [..., 36, 2069, 4839, 25606, 35524, 2, 3, 3, 3, 3, 3, 3, 1, 1, 1,...]
+
+        mapped_node_tokens:
+        [['Ġrequest'], ['Ġrequest'], ['Ġrequest'], ['Ġbefore', 'Client', 'Exec', 'ution'], ['Ġrequest'], ['Ġrequest']]
+        ```
+        - `dfg_to_code` encodes the mapping between `node_token` with `code_token`
+        - Each element in `dfg_to_code` refers to each `node_token`
+            - Element index 0 in `dfg_to_code` (i.e., (30, 31)) refers to the `node_token` index 0 in `source_ids`
+            - Element index 1 in `dfg_to_code` refers to `node_token` index 1 in `source_ids`
+        - Each element in `dfg_to_code` contain indexes that refer to the index in `tokenized_code_token_list`
+        - The first index is the start, while the second index is the end
+        - To exemplify:
+            - The element index 0 in `dfg_to_code` is `(30, 31)`, meaning that `node_token` index 0 refers to the token with index 30 in `tokenized_code_token_list`, i.e., `request`
+            - The element index 3 in `dfg_to_code` is `(35, 39)`, meaning that `node_token` index 3 refers to the tokens with index 35, 36, 37, and 38, i.e., `'Ġbefore'`, `'Client'`, `'Exec'`, `'ution'`
+            - The remaining mapping is shown in `mapped_node_tokens`
+
+    3. `dfg_to_dfg`
+        ```
+        code:
+        public ListSpeechSynthesisTasksResult listSpeechSynthesisTasks(ListSpeechSynthesisTasksRequest request) {
+            request = beforeClientExecution(request);
+            return executeListSpeechSynthesisTask (request);
+        }
+        
+        dfg_to_code:
+        [(30, 31), (33, 34), (33, 34), (35, 39), (40, 41), (54, 55)]
+
+        mapped_node_tokens (simplified):
+        request, request, request, beforeClientExecution, request, request
+
+        dfg_to_dfg:
+        [[], [3], [4], [], [0], [2]]
+        ```
+        - `dfg_to_dfg` indicates the dependency between `node_token` in `source_ids`
         - For example:
-            - `(30, 31)` refers to the subword token number 30, which is `request`
-            - `(35, 39)` refers to the subword tokens number 35 until 38, which represent `beforeClientExecution`. The code token `beforeClientExecution` is tokenized into 4 subwords, i.e., 'Ġbefore', 'Client', 'Exec', 'ution'.
-        - Each element in `dfg_to_code` corresponds to the elements in `dataflow`, specifically the element number 1 inside the tuple
-    5. `dfg_to_dfg`
-        - `dfg_to_dfg` is used to indicate the dependency between elements in `dfg_to_code`
+            - `node_token` index 1 depends on `node_token` index 3
+                - index 1, `request` before "=" in the expression `request = beforeClientExecution(request);` 
+            - `node_token` index 4 depends on `node_token` index 0
+                - index 4, `request` after "=" in the expression `request = beforeClientExecution(request);`
+                - index 0, `request` in the function parameter
+
+    4. `source_mask`
+        - `source_mask` is used to differentiate between the input and padding token when computing the attention; the attention on the padding will be ignored by multiplying the value with 0
             ```
-            dfg_to_code:
-            [(30, 31), (33, 34), (33, 34), (35, 39), (40, 41), (54, 55)]
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+            length = 200
             ```
+
+    5.  `position_idx`
+        - `position_idx` is used to indicate the relative ordering position in the sequence. 0 is used to represent the dfg, while 1 is used to indicate the padding.
             ```
-            dfg_to_dfg:
-            [[], [3], [4], [], [0], [2]]
+            [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+
+            length = 200
             ```
-        - For example:
-            - Element number 0 has no dependency
-            - Element number 1 (request) comes from element number 3 (beforeClientExecution)
-            - Element number 2 (request) comes from element number 4 (request)
+    
     6. `target_ids`
         - The same as `source_ids`, but it refers to the target translation
+    
     7. `target_mask`
         - The same as `source_mask`, but it refers to the target translation mask
+    
     8. `example_index`
         - a unique identifier number for each sample
 - One `Example` object --> produce 8 outputs above --> wrapped using `InputFeatures` object
@@ -211,7 +246,114 @@ To know the how the input of GCodeBERT is represented, I scrutinize `Data Loadin
         self.source_mask = source_mask
         self.target_mask = target_mask  
     ```
+
+# Computing Vector Representations in GCodeBERT
+- The steps to compute the vector representation:
+    - Computes `attention_mask` using `position_idx`, `dfg_to_code`, `dfg_to_dfg`, and `source_ids`
+        - The main different between GCodeBERT and standard Transformer is in `attention_mask`
+        - GCodeBERT leverages Graph-Guided Attention Mask to encode the dataflow information
+        - Specifically, GCodeBERT leverages `dfg_to_dfg` and `dfg_to_code` to compute the `attention_mask`
+        - The main ideas of Graph-Guided Attention are to encode:
+            1. The dependency between `node_token`
+                - Obtained from `dfg_to_dfg`
+                - Given `node_token` `v_1` and node `v_2`, `node_token` `v_1` is allowed to attend to `node_token` `v_2` if there is an edge from `node_token` `v_2` to `node_token` `v_1`
+                - Example:
+                    ```
+                    code:
+                    public ListSpeechSynthesisTasksResult listSpeechSynthesisTasks(ListSpeechSynthesisTasksRequest request) {
+                        request = beforeClientExecution(request);
+                        return executeListSpeechSynthesisTask (request);
+                    }
+                    
+                    dfg_to_code:
+                    [(30, 31), (33, 34), (33, 34), (35, 39), (40, 41), (54, 55)]
+
+                    mapped_node_tokens:
+                    [['Ġrequest'], ['Ġrequest'], ['Ġrequest'], ['Ġbefore', 'Client', 'Exec', 'ution'], ['Ġrequest'], ['Ġrequest']]
+
+                    dfg_to_dfg:
+                    [[], [3], [4], [], [0], [2]]
+                    ```
+                    - `node_token` index 1 can attend to `node_token` index 3
+                        - index 1, `request` before "=" in the expression `request = beforeClientExecution(request);`
+                        - index 3, `beforeClientExecution` in the expression `request = beforeClientExecution(request);`
+                    - `node_token` index 4 can attend to `node_token` index 0
+                        - index 4, `request` after "=" in the expression `request = beforeClientExecution(request);`
+                        - index 0, `request` in the function parameter
+            2. The mapping between `node_token` to `code_token`
+                - Obtained from `dfg_to_code`
+                - Given `node_token` `v` and `code_token` `x`,  `node_token` `v` and `code_token` `x` can attend to each other if `code_token` `x` have relationship with `node_token` `v`
+                - Example:
+                    - `node_token` index 3 can attend to 4 `code_tokens`, i.e,. ['Ġbefore', 'Client', 'Exec', 'ution'] and vice versa
+    - The model feeds `source_ids` to the embedding layer, resulting in `temporary_embedding`
+    - `temporary_embedding` + `attention_mask` + `position_idx` --> matrix manipulation -->  `node_token_embedding` and `code_token_embedding`
+    - `node_embedding` and `code_embedding` is summed, resulting in `combined_embedding`
+    - `combined_embedding`, `attention_mask`, and `position_idx` is passed to the encoder to produce the final vector representation
+
+
+
+
+<!-- - The main ingridients to compute a vector representation of a code snippet is `source_ids`, `source_mask`, `position_idx`, and `attention_mask`
+-  `source_ids`, `source_mask` and `position_idx` have been obtained from [Post-processing](#post-processing)
+    - `source_mask` indicates which part is padding 
+    - `position_idx` indicates the relative position of ids in `source_ids`
+    - `source_ids` contains two information:
+        ```
+        <s> x_1, x_2, ..., x_i </s> v_1, v_2, ..., v_j, p_1, p_2, ..., p_k
+        ```
+        - `x`: a token id that corresponds to subword token from `code_token_list` after the tokenization step
+        - `v`: a token id that corresponds to `current_node` from `nodes_dependency_mapping`
+        - `p`: a token id that corresopnd to padding token 
+        - `i`: the number of element in `code_token_list`
+        - `j`: the number of element in `nodes_dependency_mapping`
+        - `k`: the length of padding token
+- GCodeBERT encodes the structural information using Graph-Guided Masked Attention
+- Graph-Guided Masked Attention encodes:
+    1. The dependency relationship between each `v`
+        - Rule: `v_1` and `v_2`, `v_1` is allowed to attend to `v_2` if there is an edge from `v_2` to `v_1`
+        - Example:
+            ```
+            code:
+            public ListSpeechSynthesisTasksResult listSpeechSynthesisTasks(ListSpeechSynthesisTasksRequest request) {
+                request = beforeClientExecution(request);
+                return executeListSpeechSynthesisTask (request);
+            }
+
+            nodes_dependency_mapping:
+            # (current_node, current_node_index, comesFrom/computedFrom, source_node, source_node_index)
+            
+            [('request', 6, 'comesFrom', [], []), 
+            ('request', 9, 'computedFrom', ['beforeClientExecution'], [11]), 
+            ('request', 9, 'computedFrom', ['request'], [13]), 
+            ('beforeClientExecution', 11, 'comesFrom', [], []), 
+            ('request', 13, 'comesFrom', ['request'], [6]), 
+            ('request', 19, 'comesFrom', ['request'], [9])]
+
+            dfg_to_dfg:
+            [[], [3], [4], [], [0], [2]]
+            ```
+            - From the given `nodes_dependency_mapping` above, the corresponding `source_ids` is
+                ```
+                <s> ... </s> v_0, v_1, v_2, v_3, v_4, v_5, ..., p_k
+                ```
+            - v_0 corresponds to the first element in `nodes_dependency_mapping`, i.e., `request` in the  function parameter listSpeechSynthesisTasks
+            - v_1 and v_2 correspond to the second and third element in `nodes_dependency_mapping`, i.e., the first `request` in expression `request = beforeClientExecution(request)`
+            - v_3 corresponds to the fourth element in `nodes_dependency_mapping`, i.e., `beforeClientExecution` in the expression `request = beforeClientExecution(request)`
+            - v_4 corresponds to the fifth element in `nodes_dependency_mapping`, i.e., the second `request` in the expression `request = beforeClientExecution(request)`
+            - v_5 corresponds to the last element in `nodes_dependency_mapping`, i.e., `request` in the return statement `return executeListSpeechSynthesisTask (request)`
+            - According to the rule, v_1 is allowed to attend to v_3 (see `dfg_to_dfg`, the element in index 1, i.e., [3]) 
+    2. The mapping between `v` and `x`
+        - Rule: node `v` and token `x` can attend to each other if token `x` belongs to node `v` 
+        - This is to indicate to which token `x` the node `v` is belong to
+        - Such an information is obtained from `dfg_to_code`
+        - Example:
+            ```
+            dfg_to_code:
+            [(30, 31), (33, 34), (33, 34), (35, 39), (40, 41), (54, 55)]
+
+            source_ids:
+            <s> ... x_35, x_36, x_37, x_38, ... </s> v_0, v_1, v_2, v_3, v_4, v_5, ..., p_k
+            ```
+            - Based on the given `dfg_to_code`, node `v_3` is allowed to attend to `x_35`, `x_36`, `x_37`, `x_38` (see `dfg_to_code`, the element in index 3, i.e., (35, 39)) and vice versa 
     
-
-        
-
+- Graph-Guided Masked Attention is represented as a boolean array with shape AxA where A is the length of `source_ids` -->
