@@ -248,44 +248,43 @@ The workflow of `run.py` is shown in the figure below.
     ```
 
 # Computing Vector Representations in GCodeBERT
-- The steps to compute the vector representation:
-    - Computes `attention_mask` using `position_idx`, `dfg_to_code`, `dfg_to_dfg`, and `source_ids`
-        - The main different between GCodeBERT and standard Transformer is in `attention_mask`
-        - GCodeBERT leverages Graph-Guided Attention Mask to encode the dataflow information
-        - Specifically, GCodeBERT leverages `dfg_to_dfg` and `dfg_to_code` to compute the `attention_mask`
-        - The main ideas of Graph-Guided Attention are to encode:
-            1. The dependency between `node_token`
-                - Obtained from `dfg_to_dfg`
-                - Given `node_token` `v_1` and node `v_2`, `node_token` `v_1` is allowed to attend to `node_token` `v_2` if there is an edge from `node_token` `v_2` to `node_token` `v_1`
-                - Example:
-                    ```
-                    code:
-                    public ListSpeechSynthesisTasksResult listSpeechSynthesisTasks(ListSpeechSynthesisTasksRequest request) {
-                        request = beforeClientExecution(request);
-                        return executeListSpeechSynthesisTask (request);
-                    }
-                    
-                    dfg_to_code:
-                    [(30, 31), (33, 34), (33, 34), (35, 39), (40, 41), (54, 55)]
+1. Computes `attention_mask` using `position_idx`, `dfg_to_code`, `dfg_to_dfg`, and `source_ids`
+    - The main different between GCodeBERT and standard Transformer is in `attention_mask`
+    - GCodeBERT leverages Graph-Guided Attention Mask to encode the dataflow information
+    - Specifically, GCodeBERT leverages `dfg_to_dfg` and `dfg_to_code` to compute the `attention_mask`
+    - The main ideas of Graph-Guided Attention are to encode:
+        1. The dependency between `node_token`
+            - Obtained from `dfg_to_dfg`
+            - Given `node_token` `v_1` and node `v_2`, `node_token` `v_1` is allowed to attend to `node_token` `v_2` if there is an edge from `node_token` `v_2` to `node_token` `v_1`
+            - Example:
+                ```
+                code:
+                public ListSpeechSynthesisTasksResult listSpeechSynthesisTasks(ListSpeechSynthesisTasksRequest request) {
+                    request = beforeClientExecution(request);
+                    return executeListSpeechSynthesisTask (request);
+                }
+                
+                dfg_to_code:
+                [(30, 31), (33, 34), (33, 34), (35, 39), (40, 41), (54, 55)]
 
-                    mapped_node_tokens:
-                    [['Ġrequest'], ['Ġrequest'], ['Ġrequest'], ['Ġbefore', 'Client', 'Exec', 'ution'], ['Ġrequest'], ['Ġrequest']]
+                mapped_node_tokens:
+                [['Ġrequest'], ['Ġrequest'], ['Ġrequest'], ['Ġbefore', 'Client', 'Exec', 'ution'], ['Ġrequest'], ['Ġrequest']]
 
-                    dfg_to_dfg:
-                    [[], [3], [4], [], [0], [2]]
-                    ```
-                    - `node_token` index 1 can attend to `node_token` index 3
-                        - index 1, `request` before "=" in the expression `request = beforeClientExecution(request);`
-                        - index 3, `beforeClientExecution` in the expression `request = beforeClientExecution(request);`
-                    - `node_token` index 4 can attend to `node_token` index 0
-                        - index 4, `request` after "=" in the expression `request = beforeClientExecution(request);`
-                        - index 0, `request` in the function parameter
-            2. The mapping between `node_token` to `code_token`
-                - Obtained from `dfg_to_code`
-                - Given `node_token` `v` and `code_token` `x`,  `node_token` `v` and `code_token` `x` can attend to each other if `code_token` `x` have relationship with `node_token` `v`
-                - Example:
-                    - `node_token` index 3 can attend to 4 `code_tokens`, i.e,. ['Ġbefore', 'Client', 'Exec', 'ution'] and vice versa
-    - The model feeds `source_ids` to the embedding layer, resulting in `temporary_embedding`
-    - `temporary_embedding` + `attention_mask` + `position_idx` --> matrix manipulation -->  `node_token_embedding` and `code_token_embedding`
-    - `node_token_embedding` and `code_token_embedding` is summed, resulting in `combined_embedding`
-    - `combined_embedding`, `attention_mask`, and `position_idx` is passed to the encoder to produce the final vector representation
+                dfg_to_dfg:
+                [[], [3], [4], [], [0], [2]]
+                ```
+                - `node_token` index 1 can attend to `node_token` index 3
+                    - index 1, `request` before "=" in the expression `request = beforeClientExecution(request);`
+                    - index 3, `beforeClientExecution` in the expression `request = beforeClientExecution(request);`
+                - `node_token` index 4 can attend to `node_token` index 0
+                    - index 4, `request` after "=" in the expression `request = beforeClientExecution(request);`
+                    - index 0, `request` in the function parameter
+        2. The mapping between `node_token` to `code_token`
+            - Obtained from `dfg_to_code`
+            - Given `node_token` `v` and `code_token` `x`,  `node_token` `v` and `code_token` `x` can attend to each other if `code_token` `x` have relationship with `node_token` `v`
+            - Example:
+                - `node_token` index 3 can attend to 4 `code_tokens`, i.e,. ['Ġbefore', 'Client', 'Exec', 'ution'] and vice versa
+2. The model feeds `source_ids` to the embedding layer, resulting in `temporary_embedding`
+3. `temporary_embedding` + `attention_mask` + `position_idx` --> matrix manipulation -->  `node_token_embedding` and `code_token_embedding`
+4. `node_token_embedding` and `code_token_embedding` is summed, resulting in `combined_embedding`
+5. `combined_embedding`, `attention_mask`, and `position_idx` is passed to the encoder to produce the final vector representation
